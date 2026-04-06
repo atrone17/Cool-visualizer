@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pathfinding Visualizer</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #050a0f;
+    --surface: #0a1520;
+    --border: #0d2a3f;
+    --accent: #00d4ff;
+    --accent2: #00ff88;
+    --accent3: #ff6b35;
+    --wall: #1a3a4a;
+    --visited: #003366;
+    --frontier: #005599;
+    --path: #00d4ff;
+    --start: #00ff88;
+    --end: #ff6b35;
+    --text: #a0c8d8;
+    --text-bright: #e0f4ff;
+    --glow: 0 0 12px rgba(0,212,255,0.4);
+    --glow-green: 0 0 12px rgba(0,255,136,0.4);
+    --glow-orange: 0 0 12px rgba(255,107,53,0.4);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: 
+      radial-gradient(ellipse at 20% 20%, rgba(0,100,180,0.08) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 80%, rgba(0,212,255,0.05) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Scanlines */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 100;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 20px;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+
+  .title {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(1.4rem, 4vw, 2.2rem);
+    font-weight: 900;
+    color: var(--accent);
+    text-shadow: var(--glow);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .subtitle {
+    font-size: 0.78rem;
+    color: var(--text);
+    opacity: 0.6;
+    margin-top: 6px;
+    letter-spacing: 0.15em;
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    margin-bottom: 20px;
+    align-items: center;
+  }
+
+  .btn {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.82rem;
+    padding: 9px 18px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    transition: all 0.2s;
+    position: relative;
+    clip-path: polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%);
+  }
+
+  .btn:hover {
+    background: rgba(0,212,255,0.1);
+    box-shadow: var(--glow);
+    text-shadow: var(--glow);
+  }
+
+  .btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  .btn.green {
+    border-color: var(--accent2);
+    color: var(--accent2);
+  }
+  .btn.green:hover {
+    background: rgba(0,255,136,0.1);
+    box-shadow: var(--glow-green);
+    text-shadow: var(--glow-green);
+  }
+
+  .btn.orange {
+    border-color: var(--accent3);
+    color: var(--accent3);
+  }
+  .btn.orange:hover {
+    background: rgba(255,107,53,0.1);
+    box-shadow: var(--glow-orange);
+  }
+
+  .btn.active {
+    background: rgba(0,212,255,0.15);
+    box-shadow: var(--glow);
+  }
+
+  select {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.82rem;
+    padding: 9px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--accent);
+    cursor: pointer;
+    outline: none;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    transition: border-color 0.2s;
+  }
+
+  select:hover, select:focus {
+    border-color: var(--accent);
+    box-shadow: var(--glow);
+  }
+
+  /* Mode indicators */
+  .mode-bar {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    margin-bottom: 16px;
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    flex-wrap: wrap;
+  }
+
+  .mode-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+  }
+  .mode-item.active { opacity: 1; }
+
+  .mode-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Grid wrapper */
+  .grid-wrapper {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    padding: 3px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 0 40px rgba(0,212,255,0.05), inset 0 0 60px rgba(0,0,0,0.3);
+  }
+
+  .grid-wrapper::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: 
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 20px 20px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  canvas {
+    display: block;
+    cursor: crosshair;
+    position: relative;
+    z-index: 1;
+    image-rendering: pixelated;
+  }
+
+  /* Stats bar */
+  .stats {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .stat-label {
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    opacity: 0.5;
+    text-transform: uppercase;
+  }
+
+  .stat-value {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--accent);
+    text-shadow: var(--glow);
+    transition: color 0.3s;
+  }
+
+  .stat-value.green { color: var(--accent2); text-shadow: var(--glow-green); }
+  .stat-value.orange { color: var(--accent3); text-shadow: var(--glow-orange); }
+
+  /* Status message */
+  .status {
+    text-align: center;
+    margin-top: 14px;
+    font-size: 0.78rem;
+    letter-spacing: 0.15em;
+    min-height: 20px;
+    color: var(--accent);
+    opacity: 0.8;
+  }
+
+  .status.error { color: var(--accent3); }
+  .status.success { color: var(--accent2); }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    gap: 18px;
+    justify-content: center;
+    margin-top: 18px;
+    flex-wrap: wrap;
+    font-size: 0.7rem;
+    opacity: 0.6;
+    letter-spacing: 0.1em;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .legend-swatch {
+    width: 14px; height: 14px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .speed-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.75rem;
+    color: var(--text);
+    opacity: 0.7;
+  }
+
+  .speed-wrap input[type=range] {
+    width: 80px;
+    accent-color: var(--accent);
+  }
+
+  @media (max-width: 600px) {
+    .controls { gap: 7px; }
+    .btn { padding: 7px 12px; font-size: 0.75rem; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="title">Pathfinding Visualizer</div>
+    <div class="subtitle">// A* · Dijkstra · BFS · DFS — Algorithm Analysis System</div>
+  </header>
+
+  <div class="controls">
+    <select id="algoSelect">
+      <option value="astar">A* Search</option>
+      <option value="dijkstra">Dijkstra's</option>
+      <option value="bfs">Breadth-First</option>
+      <option value="dfs">Depth-First</option>
+    </select>
+    <button class="btn green" id="runBtn">▶ RUN</button>
+    <button class="btn" id="clearPathBtn">Clear Path</button>
+    <button class="btn orange" id="clearAllBtn">Reset Grid</button>
+    <button class="btn" id="mazeBtn">Gen Maze</button>
+    <div class="speed-wrap">
+      <span>SPD</span>
+      <input type="range" id="speedRange" min="1" max="5" value="3">
+    </div>
+  </div>
+
+  <div class="mode-bar">
+    <div class="mode-item active" id="modeWall">
+      <div class="mode-dot" style="background:#1a3a4a;border:1px solid #0d6080"></div>
+      <span>DRAW WALL</span>
+    </div>
+    <div class="mode-item" id="modeStart">
+      <div class="mode-dot" style="background:var(--start)"></div>
+      <span>SET START</span>
+    </div>
+    <div class="mode-item" id="modeEnd">
+      <div class="mode-dot" style="background:var(--end)"></div>
+      <span>SET END</span>
+    </div>
+    <div class="mode-item" style="opacity:0.4">
+      <span>S = start • E = end • click/drag = wall</span>
+    </div>
+  </div>
+
+  <div class="grid-wrapper">
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-label">Visited</div>
+      <div class="stat-value" id="statVisited">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Path Length</div>
+      <div class="stat-value green" id="statPath">—</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Time (ms)</div>
+      <div class="stat-value orange" id="statTime">—</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Algorithm</div>
+      <div class="stat-value" id="statAlgo" style="font-size:0.8rem;letter-spacing:0.05em">A*</div>
+    </div>
+  </div>
+
+  <div class="status" id="status">// Click to draw walls — press S/E to set start/end points — then RUN</div>
+
+  <div style="text-align:center;margin-top:20px;font-family:'Share Tech Mono',monospace;font-size:0.72rem;letter-spacing:0.2em;opacity:0.4;color:#a0c8d8;">
+    // MADE BY <span style="color:#00d4ff;opacity:1;text-shadow:0 0 8px rgba(0,212,255,0.5)">ADITYA</span>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background:#00ff88;box-shadow:0 0 6px #00ff88"></div>Start</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#ff6b35;box-shadow:0 0 6px #ff6b35"></div>End</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#1a3a4a;border:1px solid #0d6080"></div>Wall</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#003366"></div>Visited</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#005599"></div>Frontier</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#00d4ff;box-shadow:0 0 6px #00d4ff"></div>Path</div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+// Grid config
+const CELL = 22;
+let COLS, ROWS;
+let grid = [];
+let startCell = null, endCell = null;
+let drawMode = 'wall'; // wall, start, end
+let isRunning = false;
+let mouseDown = false;
+let erasing = false;
+
+// Colors
+const COLORS = {
+  empty:    '#0a1520',
+  wall:     '#1a3a4a',
+  start:    '#00ff88',
+  end:      '#ff6b35',
+  visited:  '#003366',
+  frontier: '#005599',
+  path:     '#00d4ff',
+};
+
+function initGrid() {
+  const wrapper = canvas.parentElement;
+  const maxW = Math.min(wrapper.clientWidth - 6, 1100);
+  COLS = Math.floor(maxW / CELL);
+  ROWS = Math.floor(Math.min(window.innerHeight * 0.52, 500) / CELL);
+  canvas.width = COLS * CELL;
+  canvas.height = ROWS * CELL;
+  grid = [];
+  for (let r = 0; r < ROWS; r++) {
+    grid[r] = [];
+    for (let c = 0; c < COLS; c++) {
+      grid[r][c] = { r, c, type: 'empty', g: Infinity, f: Infinity, h: 0, parent: null };
+    }
+  }
+  // Default start/end
+  startCell = grid[Math.floor(ROWS/2)][Math.floor(COLS*0.15)];
+  startCell.type = 'start';
+  endCell = grid[Math.floor(ROWS/2)][Math.floor(COLS*0.85)];
+  endCell.type = 'end';
+  drawAll();
+}
+
+function drawAll() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      drawCell(grid[r][c]);
+    }
+  }
+}
+
+function drawCell(cell) {
+  const x = cell.c * CELL, y = cell.r * CELL;
+  const color = COLORS[cell.type] || COLORS.empty;
+  ctx.fillStyle = color;
+  ctx.fillRect(x+1, y+1, CELL-2, CELL-2);
+
+  // Glow for special cells
+  if (cell.type === 'start' || cell.type === 'end' || cell.type === 'path') {
+    ctx.shadowBlur = cell.type === 'path' ? 8 : 14;
+    ctx.shadowColor = color;
+    ctx.fillRect(x+1, y+1, CELL-2, CELL-2);
+    ctx.shadowBlur = 0;
+  }
+
+  // Grid line
+  ctx.strokeStyle = '#0d2a3f';
+  ctx.lineWidth = 0.5;
+  ctx.strokeRect(x+0.5, y+0.5, CELL-1, CELL-1);
+}
+
+// Input handling
+canvas.addEventListener('mousedown', e => {
+  if (isRunning) return;
+  mouseDown = true;
+  const {r, c} = getCell(e);
+  if (!inBounds(r, c)) return;
+  const cell = grid[r][c];
+
+  if (e.shiftKey || drawMode === 'start') {
+    setStart(r, c); return;
+  }
+  if (e.altKey || drawMode === 'end') {
+    setEnd(r, c); return;
+  }
+
+  if (cell.type === 'wall') {
+    erasing = true;
+    cell.type = 'empty';
+  } else if (cell.type === 'empty') {
+    erasing = false;
+    cell.type = 'wall';
+  }
+  drawCell(cell);
+});
+
+canvas.addEventListener('mousemove', e => {
+  if (!mouseDown || isRunning) return;
+  const {r, c} = getCell(e);
+  if (!inBounds(r, c)) return;
+  const cell = grid[r][c];
+  if (cell.type === 'start' || cell.type === 'end') return;
+  if (erasing && cell.type === 'wall') { cell.type = 'empty'; drawCell(cell); }
+  else if (!erasing && cell.type === 'empty') { cell.type = 'wall'; drawCell(cell); }
+});
+
+window.addEventListener('mouseup', () => { mouseDown = false; });
+
+canvas.addEventListener('touchstart', e => { e.preventDefault(); handleTouch(e); }, { passive: false });
+canvas.addEventListener('touchmove', e => { e.preventDefault(); handleTouch(e); }, { passive: false });
+canvas.addEventListener('touchend', () => { mouseDown = false; });
+
+function handleTouch(e) {
+  if (isRunning) return;
+  const touch = e.touches[0];
+  const rect = canvas.getBoundingClientRect();
+  const r = Math.floor((touch.clientY - rect.top) / CELL);
+  const c = Math.floor((touch.clientX - rect.left) / CELL);
+  if (!inBounds(r, c)) return;
+  mouseDown = true;
+  const cell = grid[r][c];
+  if (cell.type === 'start' || cell.type === 'end') return;
+  cell.type = cell.type === 'wall' ? 'empty' : 'wall';
+  drawCell(cell);
+}
+
+// Keyboard
+window.addEventListener('keydown', e => {
+  if (e.key === 's' || e.key === 'S') setDrawMode('start');
+  if (e.key === 'e' || e.key === 'E') setDrawMode('end');
+  if (e.key === 'w' || e.key === 'W') setDrawMode('wall');
+  if (e.key === 'Enter') document.getElementById('runBtn').click();
+  if (e.key === 'Escape') clearPath();
+});
+
+function setDrawMode(mode) {
+  drawMode = mode;
+  document.getElementById('modeWall').classList.toggle('active', mode === 'wall');
+  document.getElementById('modeStart').classList.toggle('active', mode === 'start');
+  document.getElementById('modeEnd').classList.toggle('active', mode === 'end');
+  setStatus(`// Mode: ${mode.toUpperCase()}`, '');
+}
+
+function setStart(r, c) {
+  if (grid[r][c].type === 'wall' || grid[r][c] === endCell) return;
+  if (startCell) { startCell.type = 'empty'; drawCell(startCell); }
+  startCell = grid[r][c];
+  startCell.type = 'start';
+  drawCell(startCell);
+  setDrawMode('wall');
+}
+
+function setEnd(r, c) {
+  if (grid[r][c].type === 'wall' || grid[r][c] === startCell) return;
+  if (endCell) { endCell.type = 'empty'; drawCell(endCell); }
+  endCell = grid[r][c];
+  endCell.type = 'end';
+  drawCell(endCell);
+  setDrawMode('wall');
+}
+
+function getCell(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  return {
+    r: Math.floor((e.clientY - rect.top) * scaleY / CELL),
+    c: Math.floor((e.clientX - rect.left) * scaleX / CELL)
+  };
+}
+
+function inBounds(r, c) { return r >= 0 && r < ROWS && c >= 0 && c < COLS; }
+
+// Reset helpers
+function clearPath() {
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++) {
+      const cell = grid[r][c];
+      if (cell.type === 'visited' || cell.type === 'frontier' || cell.type === 'path') cell.type = 'empty';
+      cell.g = Infinity; cell.f = Infinity; cell.h = 0; cell.parent = null;
+    }
+  drawAll();
+  document.getElementById('statVisited').textContent = '0';
+  document.getElementById('statPath').textContent = '—';
+  document.getElementById('statTime').textContent = '—';
+  setStatus('// Path cleared', '');
+}
+
+function clearAll() {
+  initGrid();
+  document.getElementById('statVisited').textContent = '0';
+  document.getElementById('statPath').textContent = '—';
+  document.getElementById('statTime').textContent = '—';
+  setStatus('// Grid reset', '');
+}
+
+// Maze generation (recursive division)
+function generateMaze() {
+  if (isRunning) return;
+  clearPath();
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (grid[r][c].type !== 'start' && grid[r][c].type !== 'end')
+        grid[r][c].type = 'empty';
+
+  // Fill border
+  for (let r = 0; r < ROWS; r++) {
+    grid[r][0].type = 'wall';
+    grid[r][COLS-1].type = 'wall';
+  }
+  for (let c = 0; c < COLS; c++) {
+    grid[0][c].type = 'wall';
+    grid[ROWS-1][c].type = 'wall';
+  }
+
+  divide(1, 1, ROWS-2, COLS-2);
+  drawAll();
+  setStatus('// Maze generated', '');
+}
+
+function divide(rMin, cMin, rMax, cMax) {
+  if (rMax - rMin < 2 || cMax - cMin < 2) return;
+  const horizontal = (rMax - rMin) > (cMax - cMin);
+  if (horizontal) {
+    const wallR = rMin + 1 + 2 * Math.floor(Math.random() * Math.floor((rMax - rMin - 1) / 2));
+    const passC = cMin + 2 * Math.floor(Math.random() * Math.ceil((cMax - cMin + 1) / 2));
+    for (let c = cMin; c <= cMax; c++) {
+      if (c !== passC && grid[wallR][c].type !== 'start' && grid[wallR][c].type !== 'end')
+        grid[wallR][c].type = 'wall';
+    }
+    divide(rMin, cMin, wallR-1, cMax);
+    divide(wallR+1, cMin, rMax, cMax);
+  } else {
+    const wallC = cMin + 1 + 2 * Math.floor(Math.random() * Math.floor((cMax - cMin - 1) / 2));
+    const passR = rMin + 2 * Math.floor(Math.random() * Math.ceil((rMax - rMin + 1) / 2));
+    for (let r = rMin; r <= rMax; r++) {
+      if (r !== passR && grid[r][wallC].type !== 'start' && grid[r][wallC].type !== 'end')
+        grid[r][wallC].type = 'wall';
+    }
+    divide(rMin, cMin, rMax, wallC-1);
+    divide(rMin, wallC+1, rMax, cMax);
+  }
+}
+
+// ---- ALGORITHMS ----
+const DIRS = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
+const DIRS4 = [[-1,0],[1,0],[0,-1],[0,1]];
+
+function heuristic(a, b) {
+  return Math.sqrt((a.r-b.r)**2 + (a.c-b.c)**2);
+}
+
+function getNeighbors(cell, diagonal = true) {
+  const dirs = diagonal ? DIRS : DIRS4;
+  return dirs.map(([dr,dc]) => {
+    const nr = cell.r+dr, nc = cell.c+dc;
+    if (!inBounds(nr,nc) || grid[nr][nc].type === 'wall') return null;
+    return grid[nr][nc];
+  }).filter(Boolean);
+}
+
+async function runAStar() {
+  const start = startCell, end = endCell;
+  start.g = 0; start.f = heuristic(start, end);
+  const open = [start];
+  const closed = new Set();
+  let visited = 0;
+
+  while (open.length) {
+    open.sort((a,b) => a.f - b.f);
+    const current = open.shift();
+    if (current === end) return tracePath(end, visited);
+    closed.add(current);
+    if (current !== start) { current.type = 'visited'; drawCell(current); visited++; }
+    updateStats(visited);
+    await delay();
+
+    for (const nb of getNeighbors(current)) {
+      if (closed.has(nb)) continue;
+      const cost = current.c !== nb.c && current.r !== nb.r ? 1.414 : 1;
+      const tg = current.g + cost;
+      if (tg < nb.g) {
+        nb.parent = current;
+        nb.g = tg;
+        nb.h = heuristic(nb, end);
+        nb.f = nb.g + nb.h;
+        if (!open.includes(nb)) {
+          open.push(nb);
+          if (nb !== end) { nb.type = 'frontier'; drawCell(nb); }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+async function runDijkstra() {
+  const start = startCell, end = endCell;
+  start.g = 0;
+  const open = [start];
+  const visited_set = new Set();
+  let visited = 0;
+
+  while (open.length) {
+    open.sort((a,b) => a.g - b.g);
+    const current = open.shift();
+    if (visited_set.has(current)) continue;
+    visited_set.add(current);
+    if (current === end) return tracePath(end, visited);
+    if (current !== start) { current.type = 'visited'; drawCell(current); visited++; }
+    updateStats(visited);
+    await delay();
+
+    for (const nb of getNeighbors(current)) {
+      if (visited_set.has(nb)) continue;
+      const cost = current.c !== nb.c && current.r !== nb.r ? 1.414 : 1;
+      const tg = current.g + cost;
+      if (tg < nb.g) {
+        nb.parent = current;
+        nb.g = tg;
+        if (!open.includes(nb)) {
+          open.push(nb);
+          if (nb !== end) { nb.type = 'frontier'; drawCell(nb); }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+async function runBFS() {
+  const start = startCell, end = endCell;
+  const queue = [start];
+  const seen = new Set([start]);
+  let visited = 0;
+
+  while (queue.length) {
+    const current = queue.shift();
+    if (current === end) return tracePath(end, visited);
+    if (current !== start) { current.type = 'visited'; drawCell(current); visited++; }
+    updateStats(visited);
+    await delay();
+
+    for (const nb of getNeighbors(current, false)) {
+      if (!seen.has(nb)) {
+        seen.add(nb);
+        nb.parent = current;
+        queue.push(nb);
+        if (nb !== end) { nb.type = 'frontier'; drawCell(nb); }
+      }
+    }
+  }
+  return null;
+}
+
+async function runDFS() {
+  const start = startCell, end = endCell;
+  const stack = [start];
+  const seen = new Set([start]);
+  let visited = 0;
+
+  while (stack.length) {
+    const current = stack.pop();
+    if (current === end) return tracePath(end, visited);
+    if (current !== start) { current.type = 'visited'; drawCell(current); visited++; }
+    updateStats(visited);
+    await delay();
+
+    for (const nb of getNeighbors(current, false)) {
+      if (!seen.has(nb)) {
+        seen.add(nb);
+        nb.parent = current;
+        stack.push(nb);
+        if (nb !== end) { nb.type = 'frontier'; drawCell(nb); }
+      }
+    }
+  }
+  return null;
+}
+
+async function tracePath(end, visited) {
+  const path = [];
+  let cur = end;
+  while (cur) { path.push(cur); cur = cur.parent; }
+  path.reverse();
+
+  for (const cell of path) {
+    if (cell.type !== 'start' && cell.type !== 'end') {
+      cell.type = 'path';
+      drawCell(cell);
+      await sleep(18);
+    }
+  }
+  return path.length;
+}
+
+function updateStats(visited) {
+  document.getElementById('statVisited').textContent = visited;
+}
+
+function setStatus(msg, cls) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'status ' + (cls || '');
+}
+
+let speedVal = 3;
+function delay() { return sleep([40,20,10,4,1][speedVal-1]); }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// Run button
+document.getElementById('runBtn').addEventListener('click', async () => {
+  if (isRunning) return;
+  if (!startCell || !endCell) { setStatus('// No start/end set', 'error'); return; }
+  clearPath();
+  await sleep(20);
+
+  const algo = document.getElementById('algoSelect').value;
+  const algoNames = { astar: 'A*', dijkstra: "Dijkstra's", bfs: 'BFS', dfs: 'DFS' };
+  document.getElementById('statAlgo').textContent = algoNames[algo];
+
+  isRunning = true;
+  document.getElementById('runBtn').disabled = true;
+  setStatus(`// Running ${algoNames[algo]}...`, '');
+  const t0 = performance.now();
+
+  let pathLen = null;
+  if (algo === 'astar') pathLen = await runAStar();
+  else if (algo === 'dijkstra') pathLen = await runDijkstra();
+  else if (algo === 'bfs') pathLen = await runBFS();
+  else if (algo === 'dfs') pathLen = await runDFS();
+
+  const elapsed = (performance.now() - t0).toFixed(1);
+  document.getElementById('statTime').textContent = elapsed;
+
+  if (pathLen) {
+    document.getElementById('statPath').textContent = pathLen - 2;
+    setStatus(`// Path found! Length: ${pathLen-2} nodes in ${elapsed}ms`, 'success');
+  } else {
+    document.getElementById('statPath').textContent = '✗';
+    setStatus('// No path found — walls may be blocking all routes', 'error');
+  }
+
+  isRunning = false;
+  document.getElementById('runBtn').disabled = false;
+});
+
+document.getElementById('clearPathBtn').addEventListener('click', () => { if (!isRunning) clearPath(); });
+document.getElementById('clearAllBtn').addEventListener('click', () => { if (!isRunning) clearAll(); });
+document.getElementById('mazeBtn').addEventListener('click', () => { if (!isRunning) generateMaze(); });
+document.getElementById('speedRange').addEventListener('input', e => { speedVal = +e.target.value; });
+document.getElementById('algoSelect').addEventListener('change', e => {
+  const names = { astar: 'A*', dijkstra: "Dijkstra's", bfs: 'BFS', dfs: 'DFS' };
+  document.getElementById('statAlgo').textContent = names[e.target.value];
+});
+
+// Canvas click for mode
+canvas.addEventListener('click', e => {
+  if (isRunning) return;
+  const {r, c} = getCell(e);
+  if (!inBounds(r, c)) return;
+  if (drawMode === 'start') setStart(r, c);
+  else if (drawMode === 'end') setEnd(r, c);
+});
+
+// Init
+initGrid();
+window.addEventListener('resize', () => { if (!isRunning) initGrid(); });
+</script>
+</body>
+</html>
